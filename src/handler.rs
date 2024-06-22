@@ -1,9 +1,30 @@
 use crate::context::Context;
 use crate::extract::Extract;
-use std::{future::Future, marker::PhantomData};
+use std::{future::Future, marker::PhantomData, pin::Pin};
 
 pub trait Handler<Context, Args, Ret> {
     fn apply(self, context: &Context) -> impl Future<Output = Ret> + Send;
+}
+
+pub type ReducedHandler<Context, Ret> =
+    Box<dyn Fn(&Context) -> Pin<Box<dyn Future<Output = Ret> + Send + 'static>>>;
+pub trait HandlerExt<Context, Args, Ret>: Handler<Context, Args, Ret>
+where
+    Args: 'static,
+    Ret: 'static,
+    Self: 'static,
+{
+    fn reduce(self) -> ReducedHandler<Context, Ret>
+    where
+        Self: Clone + Sized + Send,
+        Context: Clone + Send + 'static,
+    {
+        Box::new(move |context| {
+            let context = context.clone();
+            let this = self.clone();
+            Box::pin(async move { this.apply(&context).await })
+        })
+    }
 }
 
 pub struct Fallible<T, E> {

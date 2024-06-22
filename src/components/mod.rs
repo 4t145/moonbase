@@ -1,42 +1,52 @@
-use std::{
-    any::{Any, TypeId},
-    collections::{HashMap, HashSet},
-    future::Future,
-    pin::Pin,
-    sync::{Arc, OnceLock},
-};
-
+use std::{any::Any, collections::HashMap, sync::Arc};
+mod name;
+use crossbeam::sync::ShardedLock;
+pub use name::*;
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy, Default)]
 pub struct Entity {
     entity_id: (u64, u64),
 }
 
-pub trait Component: Any + Send + Sync + 'static {}
-
-pub struct ComponentStorage {
-    entity_to_component: HashMap<Entity, HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
-    component_to_entity: HashMap<TypeId, HashSet<Entity>>,
+pub trait MoonbaseComponent: Any + Clone + Send + Sync + 'static {}
+#[derive(Debug, Default)]
+pub struct ComponentRepositoryInner {
+    components: HashMap<u64, Box<dyn Any + Send + Sync>>,
 }
 
-impl ComponentStorage {
-    pub fn add_relationship<C: Component>(&mut self, entity: Entity, component: C) {
-        let component_id = TypeId::of::<C>();
-        self.entity_to_component
-            .entry(entity)
-            .or_default()
-            .insert(component_id, Box::new(component));
-        self.component_to_entity
-            .entry(component_id)
-            .or_default()
-            .insert(entity);
+pub type ComponentRepository = Arc<ShardedLock<ComponentRepositoryInner>>;
+
+impl ComponentRepositoryInner {
+    pub fn new() -> Self {
+        ComponentRepositoryInner::default()
     }
-    pub fn delete_relationship<C: Component>(&mut self, entity: Entity) {
-        let component_id = TypeId::of::<C>();
-        if let Some(components) = self.entity_to_component.get_mut(&entity) {
-            components.remove(&component_id);
-        }
-        if let Some(entities) = self.component_to_entity.get_mut(&component_id) {
-            entities.remove(&entity);
-        }
+
+    pub fn insert<T: MoonbaseComponent>(
+        &mut self,
+        name: &ComponentName<T>,
+        component: T,
+    ) -> Option<T> {
+        let id = name.hash();
+        let replaced = self.components.insert(id, Box::new(component));
+        replaced.map(|component| *component.downcast::<T>().expect("type mismatch").clone())
+    }
+
+    pub fn remove<T: MoonbaseComponent>(&mut self, name: &ComponentName<T>) -> Option<T> {
+        let id = name.hash();
+        self.components
+            .remove(&id)
+            .map(|component| *component.downcast::<T>().expect("type mismatch").clone())
+    }
+
+    pub fn get<T: MoonbaseComponent>(&self, name: &ComponentName<T>) -> Option<T> {
+        let id = name.hash();
+        self.components
+            .get(&id)
+            .map(|component| component.downcast_ref::<T>().unwrap().clone())
+    }
+
+    pub fn iter<T: MoonbaseComponent>(&self) -> impl Iterator<Item = T> + '_ {
+        self.components
+            .values()
+            .filter_map(|component| component.downcast_ref::<T>().cloned())
     }
 }

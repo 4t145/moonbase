@@ -1,8 +1,38 @@
 use std::marker::PhantomData;
 
-use crate::{extract::Extract, Moonbase};
+use crate::{
+    extract::Extract,
+    handler::{Fallible, Handler},
+    Moonbase,
+};
 
-pub trait Context: Send + Sync + 'static {}
+pub trait Context: Sized + Send + Sync + 'static {}
+
+pub trait ContextExt: Context {
+    fn call<Args, Ret, F>(&self, handler: F) -> impl std::future::Future<Output = Ret> + Send
+    where
+        F: Handler<Self, Args, Ret> + Send,
+    {
+        handler.apply(self)
+    }
+    fn fallible_call<Args, Ret, Error, F>(
+        &self,
+        handler: F,
+    ) -> impl std::future::Future<Output = Result<Ret, Error>> + Send
+    where
+        F: Handler<Self, Fallible<Args, Error>, Result<Ret, Error>> + Send,
+    {
+        handler.apply(self)
+    }
+    fn extract<T>(&self) -> impl std::future::Future<Output = T> + Send
+    where
+        T: Extract<Self> + Send,
+    {
+        T::extract(self)
+    }
+}
+
+impl<T> ContextExt for T where T: Context {}
 
 pub struct FromContext<T, C> {
     pub data: T,
@@ -29,5 +59,3 @@ where
         FromContext::new(T::extract(context.as_ref()).await)
     }
 }
-
-impl Context for Moonbase {}
