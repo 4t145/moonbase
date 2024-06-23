@@ -13,7 +13,7 @@
 If you are addicted to global static resource, moonbase can provide a alterative way to get app-wise unique resource by `MoonbaseResource` from anywhere in your program.
 
 ```rust
-let AppName(app_name) = app.get_resource<AppName>();
+let AppName(app_name) = app.get_resource::<AppName>();
 ```
 ### A way to get **COMPONENT**
 
@@ -21,7 +21,7 @@ Ok, your resource may be a module-wise resource, a temporary state, or some rand
 
 
 ```rust
-let mail_config = app.get_component<MailConfig>(&module_name);
+let mail_config = app.get_component::<MailConfig>(&module_name);
 ```
 
 ### A way to use **CONTEXT**
@@ -48,11 +48,11 @@ Don't spawn your task **everywhere**, and then you don't know their status at al
 ```rust
 async fn run(app: &Moonbase) {
     // do some initializations
-    app.run_daemon<AxumWebService>().await?;
-    app.run_daemon<ListenConfigChangeService>().await?;
-    app.run_daemon<RunCronBotService>().await?;
-    app.run_daemon<DoSomeRandomThingService>().await?;
-    let handle = app.run_daemon<ListenShutdownSignal>().await?;
+    app.run_daemon::<AxumWebService>().await?;
+    app.run_daemon::<ListenConfigChangeService>().await?;
+    app.run_daemon::<RunCronBotService>().await?;
+    app.run_daemon::<DoSomeRandomThingService>().await?;
+    let handle = app.run_daemon::<ListenShutdownSignal>().await?;
     handle.wait().await;
 }
 ```
