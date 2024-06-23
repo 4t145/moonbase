@@ -1,7 +1,9 @@
 use std::{future::IntoFuture, pin::Pin};
 
 use futures::Future;
-use moonbase::{context::ContextExt, daemon::Daemon, extract::Extract, runtime::Tokio, Moonbase};
+use moonbase::{
+    context::ContextExt, daemon::Daemon, extract::Extract, runtime::Tokio, AppContext, Moonbase,
+};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -58,3 +60,14 @@ impl Daemon<Moonbase> for MyDaemon {
         Some(std::time::Duration::from_secs(1))
     }
 }
+pub struct SomeTransitionContext {
+    app: AppContext,
+}
+
+impl AsRef<AppContext> for SomeTransitionContext {
+    fn as_ref(&self) -> &AppContext {
+        &self.app
+    }
+}
+
+

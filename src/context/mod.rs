@@ -65,3 +65,5 @@ where
         FromContext::new(T::extract(context.as_ref()).await)
     }
 }
+
+pub type FromMoonbase<T> = FromContext<T, crate::Moonbase>;
