@@ -1,4 +1,3 @@
-
 #[cfg(feature = "rt-tokio")]
 mod tokio;
 #[cfg(feature = "rt-tokio")]
@@ -10,6 +9,5 @@ pub trait Runtime {
     fn spawn<F>(&self, future: F)
     where
         F: std::future::Future<Output = ()> + Send + 'static;
+    fn sleep(&self, duration: std::time::Duration) -> impl std::future::Future<Output = ()> + Send;
 }
-
-

@@ -1,26 +1,31 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::Arc,
+    sync::{atomic::AtomicUsize, Arc},
 };
 
+use crate::runtime::Runtime;
 use components::{ComponentName, ComponentRepository, MoonbaseComponent};
 use context::Context;
-use crossbeam::sync::ShardedLock;
+use crossbeam::{atomic::AtomicCell, epoch::Atomic, sync::ShardedLock};
+use daemon::{Daemon, DaemonHandle, DaemonStatus};
 use extract::Extract;
 use futures::{Future, FutureExt};
 use resource::MoonbaseResource;
-use service::{MoonbaseService, MoonbaseServiceRunner, ServiceHandle};
+
 pub mod cluster;
 pub mod components;
 pub mod context;
+pub mod daemon;
+pub mod extension;
 pub mod extract;
 pub mod handler;
+pub mod module;
+pub mod net;
 pub mod resource;
 pub mod runtime;
-pub mod service;
 pub mod utils;
-pub mod module;
+
 #[derive(Debug, Clone, Default)]
 pub struct Moonbase {
     id: u64,
@@ -77,85 +82,80 @@ impl Moonbase {
         let components = self.components.read().unwrap();
         components.get(name).is_some()
     }
-    pub async fn run_service<Service, Stream, Signal>(&self) -> anyhow::Result<()>
+    pub async fn run_daemon<D>(&self) -> anyhow::Result<DaemonHandle>
     where
-        anyhow::Result<MoonbaseServiceRunner<Service, Stream, Signal>>:
-            Extract<Moonbase> + Send + 'static,
-        Service: MoonbaseService,
-        Stream: futures::Stream<Item = Service::Request> + Unpin + Send,
-        Signal: Send + Clone + Future<Output = ()> + Send,
-        <Service as tower::Service<<Stream as futures::Stream>::Item>>::Future: Send,
-        <Stream as futures::Stream>::Item: std::marker::Send,
+        D: Daemon<Self>,
+        D::IntoFuture: Send + 'static,
     {
-        let descriptor = Service::descriptor();
+        // prepare the daemon
+        let descriptor = D::descriptor();
         let handler_name = ComponentName::new(descriptor.name.clone());
         // fetch prev handle
-        if let Some(prev_handle) = self.get_component::<ServiceHandle>(&handler_name) {
+        if let Some(prev_handle) = self.get_component::<DaemonHandle>(&handler_name) {
             anyhow::ensure!(
                 !prev_handle.is_guarded,
-                "service {} is still running",
+                "daemon {} is still running",
                 descriptor.name
             );
             prev_handle.kill_guard_and_wait().await;
-            self.take_service_handle::<Service>();
+            self.remove_component(&handler_name);
         }
-
-        // init
-        let runner =
-            <anyhow::Result<MoonbaseServiceRunner<Service, Stream, Signal>>>::extract(self).await?;
-        let is_guarded = runner.is_guarded();
+        let daemon = <anyhow::Result<D>>::extract(self).await?;
+        let max_restart_time = daemon.max_restart_time();
+        let cool_down_time = daemon.cool_down_time();
         let (finish_tx, finish_rx) = futures::channel::oneshot::channel::<()>();
-        // spawning the task
+        let (kill_tx, mut kill_rx) = futures::channel::oneshot::channel::<()>();
         let runtime = self
             .get_resource::<crate::runtime::DefaultRuntime>()
             .expect("no runtime found");
-        let handle = if is_guarded {
-            let (kill_tx, mut kill_rx) = futures::channel::oneshot::channel::<()>();
-            crate::runtime::Runtime::spawn(runtime.as_ref(), async move {
-                let mut runner = runner;
-                loop {
-                    futures::select! {
-                        next_runner = runner.run().fuse() => {
-                            runner = next_runner;
-                        }
-                        _ = kill_rx => {
-                            break;
-                        }
-                    };
-                }
-                let _ = finish_tx.send(());
-            });
-            ServiceHandle {
-                kill: Arc::new(std::sync::Mutex::new(Some(kill_tx))),
-                finish: Arc::new(std::sync::Mutex::new(Some(finish_rx))),
-                is_guarded: true,
-            }
-        } else {
-            crate::runtime::Runtime::spawn(runtime.as_ref(), async move {
-                runner.run().await;
-                let _ = finish_tx.send(());
-            });
-            ServiceHandle {
-                kill: Arc::new(std::sync::Mutex::new(None)),
-                finish: Arc::new(std::sync::Mutex::new(Some(finish_rx))),
-                is_guarded: false,
-            }
+        let status = Arc::new(AtomicCell::new(DaemonStatus::Starting));
+        let restart_time = Arc::new(AtomicUsize::new(0));
+        let handle = DaemonHandle {
+            kill: Arc::new(std::sync::Mutex::new(Some(kill_tx))),
+            finish: Arc::new(std::sync::Mutex::new(Some(finish_rx))),
+            state: status.clone(),
+            is_guarded: max_restart_time != Some(0),
+            restarted: restart_time.clone(),
         };
-        // set the handle
-        self.set_component(&handler_name, handle);
-        Ok(())
+        crate::runtime::Runtime::spawn(runtime.clone().as_ref(), async move {
+            let status = status.clone();
+            let restart_time = restart_time.clone();
+            let mut daemon = daemon;
+            loop {
+                let current_time = restart_time.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(max_restart_time) = max_restart_time {
+                    if current_time > max_restart_time {
+                        status.store(DaemonStatus::Terminated);
+                        break;
+                    }
+                }
+                status.store(DaemonStatus::Running);
+                futures::select! {
+                    next_daemon = daemon.into_future().fuse() => {
+                        daemon = next_daemon;
+                        status.store(DaemonStatus::Starting);
+                        if let Some(cool_down_time) = cool_down_time {
+                            let _ = runtime.sleep(cool_down_time).await;
+                        }
+                    }
+                    _ = kill_rx => {
+                        status.store(DaemonStatus::Terminated);
+                        break;
+                    }
+                };
+            }
+            let _ = finish_tx.send(());
+        });
+        self.set_component(&handler_name, handle.clone());
+        Ok(handle)
     }
-
-    /// remove the handle of a service, and return the handle if it exists
-    ///
-    /// # Notice
-    /// once the handle is dropped, the service guard will be killed
-    pub fn take_service_handle<Service>(&self) -> Option<ServiceHandle>
+    pub fn get_daemon_handle<D>(&self) -> Option<DaemonHandle>
     where
-        Service: service::MoonbaseService,
+        D: Daemon<Self>,
     {
-        let handler_name = ComponentName::new(Service::descriptor().name);
-        self.remove_component(&handler_name)
+        let descriptor = D::descriptor();
+        let handler_name = ComponentName::new(descriptor.name.clone());
+        self.get_component(&handler_name)
     }
     pub fn new() -> Self {
         Moonbase {
@@ -171,6 +171,4 @@ impl Extract<Moonbase> for Moonbase {
         context.clone()
     }
 }
-impl Context for Moonbase {
-
-}
+impl Context for Moonbase {}

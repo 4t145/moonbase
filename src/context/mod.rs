@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     extract::Extract,
     handler::{Fallible, Handler},
+    module::Module,
     Moonbase,
 };
 
@@ -29,6 +30,12 @@ pub trait ContextExt: Context {
         T: Extract<Self> + Send,
     {
         T::extract(self)
+    }
+    fn load_module<M>(&self, module: M) -> impl std::future::Future<Output = anyhow::Result<()>>
+    where
+        M: Module<Self>,
+    {
+        module.initialize(self)
     }
 }
 

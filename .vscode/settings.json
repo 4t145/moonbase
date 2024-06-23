@@ -4,6 +4,7 @@
         "Moonbase"
     ],
     "rust-analyzer.cargo.features": [
-        "rt-tokio"
+        "rt-tokio",
+        "axum"
     ]
 }

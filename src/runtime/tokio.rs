@@ -1,4 +1,4 @@
-use crate::resource::MoonbaseResource;
+use crate::{context::Context, module::Module, resource::MoonbaseResource, Moonbase};
 
 #[derive(Debug, Clone)]
 pub struct Tokio {
@@ -20,6 +20,21 @@ impl super::Runtime for Tokio {
     {
         self.inner.spawn(future);
     }
+
+    fn sleep(&self, duration: std::time::Duration) -> impl std::future::Future<Output = ()> + Send {
+        tokio::time::sleep(duration)
+    }
 }
 
 impl MoonbaseResource for Tokio {}
+impl Module<Moonbase> for Tokio {
+    fn initialize(
+        self,
+        context: &Moonbase,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
+        context.set_resource(self);
+        async move { Ok(()) }
+    }
+}
+
+
