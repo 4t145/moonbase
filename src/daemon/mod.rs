@@ -11,7 +11,6 @@ pub struct DaemonDescriptor {
     pub name: Cow<'static, str>,
 }
 
-
 pub trait Daemon<C>: IntoFuture<Output = Self> + Extract<C> + Send + Sync + 'static
 where
     C: Context,

@@ -4,7 +4,6 @@ use crate::{
     extract::Extract,
     handler::{Fallible, Handler},
     module::Module,
-    Moonbase,
 };
 
 pub trait Context: Sized + Send + Sync + 'static {}

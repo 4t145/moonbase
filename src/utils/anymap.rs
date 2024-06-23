@@ -12,8 +12,8 @@ impl AnyMap {
         AnyMap(HashMap::new())
     }
 
-    pub fn insert<T: Any + Send + Sync>(&mut self, value: impl Into<Arc<T>>) -> Option<Arc<T>> {
-        let replaced = self.0.insert(TypeId::of::<T>(), value.into());
+    pub fn insert<T: Any + Send + Sync>(&mut self, value: T) -> Option<Arc<T>> {
+        let replaced = self.0.insert(TypeId::of::<T>(), Arc::new(value));
         replaced.map(|resource| Arc::downcast(resource).expect("fail to downcast resource"))
     }
 

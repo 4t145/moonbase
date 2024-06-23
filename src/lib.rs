@@ -1,19 +1,15 @@
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    sync::{atomic::AtomicUsize, Arc},
-};
+use std::sync::{atomic::AtomicUsize, Arc};
 
 use crate::runtime::Runtime;
 use components::{ComponentName, ComponentRepository, MoonbaseComponent};
 use context::Context;
-use crossbeam::{atomic::AtomicCell, epoch::Atomic, sync::ShardedLock};
+use crossbeam::{atomic::AtomicCell, sync::ShardedLock};
 use daemon::{Daemon, DaemonHandle, DaemonStatus};
 use extract::Extract;
-use futures::{Future, FutureExt};
+use futures::FutureExt;
 use resource::MoonbaseResource;
+use utils::AnyMap;
 
-pub mod cluster;
 pub mod components;
 pub mod context;
 pub mod daemon;
@@ -29,7 +25,7 @@ pub mod utils;
 #[derive(Debug, Clone, Default)]
 pub struct Moonbase {
     id: u64,
-    resources: Arc<ShardedLock<HashMap<TypeId, Arc<dyn Send + Sync + Any>>>>,
+    resources: Arc<ShardedLock<AnyMap>>,
     components: ComponentRepository,
 }
 
@@ -41,20 +37,15 @@ impl Moonbase {
     }
     pub fn set_resource<T: MoonbaseResource>(&self, resource: T) {
         let mut resources = self.resources.write().unwrap();
-        resources.insert(TypeId::of::<T>(), Arc::new(resource));
+        resources.insert(resource);
     }
     pub fn get_resource<T: MoonbaseResource>(&self) -> Option<Arc<T>> {
         let resources = self.resources.read().unwrap();
-        resources
-            .get(&TypeId::of::<T>())
-            .cloned()
-            .map(|resource| Arc::downcast(resource).expect("fail to downcast resource"))
+        resources.get::<T>()
     }
     pub fn remove_resource<T: MoonbaseResource>(&self) -> Option<Arc<T>> {
         let mut resources = self.resources.write().unwrap();
-        resources
-            .remove(&TypeId::of::<T>())
-            .map(|resource| Arc::downcast(resource).expect("fail to downcast resource"))
+        resources.remove::<T>()
     }
     pub fn set_component<T: MoonbaseComponent>(
         &self,
@@ -160,7 +151,7 @@ impl Moonbase {
     pub fn new() -> Self {
         Moonbase {
             id: 0,
-            resources: Arc::new(ShardedLock::new(HashMap::new())),
+            resources: Arc::new(ShardedLock::new(AnyMap::new())),
             components: ComponentRepository::default(),
         }
     }

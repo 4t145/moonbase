@@ -39,9 +39,12 @@ impl ComponentRepositoryInner {
 
     pub fn get<T: MoonbaseComponent>(&self, name: &ComponentName<T>) -> Option<T> {
         let id = name.hash();
-        self.components
-            .get(&id)
-            .map(|component| component.downcast_ref::<T>().expect("type mismatch").clone())
+        self.components.get(&id).map(|component| {
+            component
+                .downcast_ref::<T>()
+                .expect("type mismatch")
+                .clone()
+        })
     }
 
     pub fn iter<T: MoonbaseComponent>(&self) -> impl Iterator<Item = T> + '_ {
@@ -50,4 +53,3 @@ impl ComponentRepositoryInner {
             .filter_map(|component| component.downcast_ref::<T>().cloned())
     }
 }
-

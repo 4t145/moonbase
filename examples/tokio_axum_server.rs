@@ -1,10 +1,7 @@
 use std::{future::IntoFuture, pin::Pin};
 
-use futures::{Future, Stream};
-use moonbase::{
-    context::ContextExt, daemon::Daemon, extract::Extract, handler::Fallible, runtime::Tokio,
-    Moonbase,
-};
+use futures::Future;
+use moonbase::{context::ContextExt, daemon::Daemon, extract::Extract, runtime::Tokio, Moonbase};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -34,7 +31,7 @@ async fn init_resource_infallible() {}
 pub struct MyDaemon {}
 
 impl Extract<Moonbase> for MyDaemon {
-    async fn extract(moonbase: &Moonbase) -> Self {
+    async fn extract(_moonbase: &Moonbase) -> Self {
         MyDaemon {}
     }
 }
@@ -44,10 +41,10 @@ impl IntoFuture for MyDaemon {
     type IntoFuture = Pin<Box<dyn Future<Output = Self> + Send>>;
 
     fn into_future(self) -> Pin<Box<dyn Future<Output = Self> + Send>> {
-        Box::pin(async { 
+        Box::pin(async {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             println!("Hello, Moonbase!");
-            self 
+            self
         })
     }
 }
