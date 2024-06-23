@@ -4,7 +4,7 @@
 
 **Moonbase** is a meta framework which provides a **easy** way to create a **maintainable** service.
 
-## What can Moonbase Provides?
+## What can Moonbase Provide?
 
 
 
