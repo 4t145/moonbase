@@ -1,40 +1,65 @@
 use std::marker::PhantomData;
 
 use crate::{
-    extract::Extract,
-    handler::{Fallible, Handler},
+    extract::ExtractFrom,
+    handler::{FallibleFn, Handler},
     module::Module,
 };
 
-pub trait Context: Sized + Send + Sync + 'static {}
-
-pub trait ContextExt: Context {
+pub trait Context: Sized + Send + Sync + 'static {
     fn call<Args, Ret, F>(&self, handler: F) -> impl std::future::Future<Output = Ret> + Send
     where
         F: Handler<Self, Args, Ret> + Send,
     {
         handler.apply(self)
     }
+    fn extract<T>(&self) -> impl std::future::Future<Output = T> + Send
+    where
+        T: ExtractFrom<Self> + Send,
+    {
+        T::extract_from(self)
+    }
+}
+
+pub trait ContextExt: Context {
+    /// Call a fallible function with the context.
+    ///
+    /// This is a convenience method that calls the [`Context::call`] method on the handler,
+    /// with a [`FallibleFn`] adapter.
     fn fallible_call<Args, Ret, Error, F>(
         &self,
         handler: F,
     ) -> impl std::future::Future<Output = Result<Ret, Error>> + Send
     where
-        F: Handler<Self, Fallible<Args, Error>, Result<Ret, Error>> + Send,
+        F: Handler<Self, FallibleFn<Args, Error>, Result<Ret, Error>> + Send,
     {
-        handler.apply(self)
+        self.call(handler)
     }
-    fn extract<T>(&self) -> impl std::future::Future<Output = T> + Send
+
+    /// Call an infallible function with the context.
+    ///
+    /// This is a convenience method that calls the [`Context::call`] method on the handler,
+    /// with an [`InfallibleFn`] adapter.
+    fn infallible_call<Args, Ret, F>(
+        &self,
+        handler: F,
+    ) -> impl std::future::Future<Output = Ret> + Send
     where
-        T: Extract<Self> + Send,
+        F: Handler<Self, FallibleFn<Args, ()>, Ret> + Send,
     {
-        T::extract(self)
+        self.call(handler)
     }
+
+    /// Load a module into the context.
+    ///
+    /// This is a convenience method that calls the [`Context::call`] method on the module,
+    /// with a [`ModuleHandler`](`crate::module::ModuleHandler`) adapter,
+    /// in witch [`Module::initialize`] is called.
     fn load_module<M>(&self, module: M) -> impl std::future::Future<Output = anyhow::Result<()>>
     where
-        M: Module<Self>,
+        M: Module<Self> + Send,
     {
-        module.initialize(self)
+        self.call(module)
     }
 }
 
@@ -54,15 +79,15 @@ impl<T, C> FromContext<T, C> {
     }
 }
 
-impl<T, C, S> Extract<S> for FromContext<T, C>
+impl<T, C, S> ExtractFrom<S> for FromContext<T, C>
 where
     S: Context,
     C: Context,
     S: AsRef<C>,
-    T: Extract<C>,
+    T: ExtractFrom<C>,
 {
-    async fn extract(context: &S) -> Self {
-        FromContext::new(T::extract(context.as_ref()).await)
+    async fn extract_from(context: &S) -> Self {
+        FromContext::new(T::extract_from(context.as_ref()).await)
     }
 }
 

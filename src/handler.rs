@@ -1,16 +1,22 @@
+//! Handlers allow us to use **Implicit Parameters**
+//!
+//! Imaging we have a http client  
+
 use crate::context::Context;
-use crate::extract::Extract;
+use crate::extract::ExtractFrom;
 use std::{future::Future, marker::PhantomData, pin::Pin};
 
-pub trait Handler<Context, Args, Ret> {
+pub trait Handler<Context, Adapter, Ret> {
     fn apply(self, context: &Context) -> impl Future<Output = Ret> + Send;
 }
 
+/// Reduced and boxed handler
 pub type ReducedHandler<Context, Ret> =
     Box<dyn Fn(&Context) -> Pin<Box<dyn Future<Output = Ret> + Send + 'static>>>;
-pub trait HandlerExt<Context, Args, Ret>: Handler<Context, Args, Ret>
+
+pub trait HandlerExt<Context, Adapter, Ret>: Handler<Context, Adapter, Ret>
 where
-    Args: 'static,
+    Adapter: 'static,
     Ret: 'static,
     Self: 'static,
 {
@@ -27,19 +33,55 @@ where
     }
 }
 
-pub struct Fallible<T, E> {
-    marker: PhantomData<(T, E)>,
+pub struct Proxy<C, A, R, H, P>
+where
+    H: Handler<C, A, R>,
+    P: Fn(&C, &H),
+{
+    handler: H,
+    proxy: P,
+    #[allow(clippy::type_complexity)]
+    marker: PhantomData<(fn(&C) -> R, A)>,
 }
 
-pub struct Infallible<T> {
-    marker: PhantomData<T>,
+impl<C, A, R, H, P> Proxy<C, A, R, H, P>
+where
+    H: Handler<C, A, R>,
+    P: Fn(&C, &H),
+{
+    pub fn new(handler: H, proxy: P) -> Self {
+        Self {
+            handler,
+            proxy,
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<C, A, R, H, P> Handler<C, A, R> for Proxy<C, A, R, H, P>
+where
+    H: Handler<C, A, R>,
+    P: Fn(&C, &H),
+{
+    fn apply(self, context: &C) -> impl Future<Output = R> + Send {
+        (self.proxy)(context, &self.handler);
+        self.handler.apply(context)
+    }
+}
+
+pub struct FallibleFn<T, E> {
+    marker: PhantomData<fn() -> (T, E)>,
+}
+
+pub struct InfallibleFn<T> {
+    marker: PhantomData<fn() -> T>,
 }
 
 macro_rules! impl_handler {
     ($($T:ident),*) => {
-        impl<F, C, $($T,)* Ret, Fut> Handler<C, Infallible<($($T,)*)>, Ret> for F
+        impl<F, C, $($T,)* Ret, Fut> Handler<C, InfallibleFn<($($T,)*)>, Ret> for F
         where
-            $($T: Extract<C> + Send,)*
+            $($T: ExtractFrom<C> + Send,)*
             C: Context,
             Fut: Future<Output = Ret> + Send + 'static,
             Self: Fn($($T,)*) -> Fut + Send,
@@ -47,14 +89,14 @@ macro_rules! impl_handler {
             #[allow(unused_variables, non_snake_case)]
             async fn apply(self, context: &C) -> Ret {
                 $(
-                    let $T = $T::extract(context).await;
+                    let $T = $T::extract_from(context).await;
                 )*
                 self($($T,)*).await
             }
         }
-        impl<F, C, $($T,)* Ret, Fut, Error> Handler<C, Fallible<($($T,)*), Error>, Result<Ret, Error>> for F
+        impl<F, C, $($T,)* Ret, Fut, Error> Handler<C, FallibleFn<($($T,)*), Error>, Result<Ret, Error>> for F
         where
-            $(Result<$T, Error>: Extract<C> + Send,)*
+            $(Result<$T, Error>: ExtractFrom<C> + Send,)*
             $($T: Send,)*
             C: Context,
             Fut: Future<Output = Result<Ret, Error>> + Send + 'static,
@@ -63,7 +105,7 @@ macro_rules! impl_handler {
             #[allow(unused_variables, non_snake_case)]
             async fn apply(self, context: &C) -> Result<Ret, Error> {
                 $(
-                    let $T = <Result<$T, Error>>::extract(context).await?;
+                    let $T = <Result<$T, Error>>::extract_from(context).await?;
                 )*
                 (self)($($T,)*).await
             }

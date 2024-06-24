@@ -1,9 +1,16 @@
-use std::{future::IntoFuture, pin::Pin};
+use std::{future::IntoFuture, pin::Pin, time::Duration};
 
 use futures::Future;
 use moonbase::{
-    context::ContextExt, daemon::Daemon, extract::Extract, runtime::Tokio, AppContext, Moonbase,
+    context::{Context, ContextExt},
+    daemon::Daemon,
+    extension::tsuki_scheduler::{TsukiScheduler, TsukiSchedulerClient},
+    extract::ExtractFrom,
+    runtime::Tokio,
+    signal::{Signal, SignalKey},
+    AppContext, Moonbase,
 };
+use tsuki_scheduler::{Task, TaskUid};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -19,8 +26,26 @@ async fn async_main() -> anyhow::Result<()> {
     moonbase.load_module(Tokio::default()).await?;
     moonbase.call(init_resource_infallible).await;
     moonbase.fallible_call(init_resource).await?;
+    moonbase.run_daemon::<TsukiScheduler>().await?;
+    let client = moonbase.get_resource::<TsukiSchedulerClient>().unwrap();
+
     let handle = moonbase.run_daemon::<MyDaemon>().await?;
+    moonbase.set_signal(SignalKey::from_type::<Moonbase>(), Signal::new());
+    client.add_task(
+        TaskUid::uuid(),
+        Task::tokio(None, || async {
+            println!("Hello, TsukiScheduler!");
+        }),
+    );
     handle.wait().await;
+    let signal = moonbase
+        .get_signal(&SignalKey::from_type::<Moonbase>())
+        .unwrap();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        moonbase.trigger_signal(&SignalKey::from_type::<Moonbase>());
+    });
+    signal.wait().await;
     Ok(())
 }
 
@@ -32,8 +57,8 @@ async fn init_resource_infallible() {}
 
 pub struct MyDaemon {}
 
-impl Extract<Moonbase> for MyDaemon {
-    async fn extract(_moonbase: &Moonbase) -> Self {
+impl ExtractFrom<Moonbase> for MyDaemon {
+    async fn extract_from(_moonbase: &Moonbase) -> Self {
         MyDaemon {}
     }
 }
@@ -69,5 +94,3 @@ impl AsRef<AppContext> for SomeTransitionContext {
         &self.app
     }
 }
-
-

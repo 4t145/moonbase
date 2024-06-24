@@ -2,6 +2,8 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 mod name;
 use crossbeam::sync::ShardedLock;
 pub use name::*;
+
+use crate::Moonbase;
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy, Default)]
 pub struct Entity {
     entity_id: (u64, u64),
@@ -51,5 +53,34 @@ impl ComponentRepositoryInner {
         self.components
             .values()
             .filter_map(|component| component.downcast_ref::<T>().cloned())
+    }
+}
+
+impl Moonbase {
+    pub fn set_component<T: MoonbaseComponent>(
+        &self,
+        name: &ComponentName<T>,
+        component: T,
+    ) {
+        let mut components = self.components.write().unwrap();
+        components.insert(name, component);
+    }
+    pub fn get_component<T: MoonbaseComponent>(
+        &self,
+        name: &ComponentName<T>,
+    ) -> Option<T> {
+        let components = self.components.read().unwrap();
+        components.get(name)
+    }
+    pub fn remove_component<T: MoonbaseComponent>(
+        &self,
+        name: &ComponentName<T>,
+    ) -> Option<T> {
+        let mut components = self.components.write().unwrap();
+        components.remove(name)
+    }
+    pub fn has_component<T: MoonbaseComponent>(&self, name: &ComponentName<T>) -> bool {
+        let components = self.components.read().unwrap();
+        components.get(name).is_some()
     }
 }

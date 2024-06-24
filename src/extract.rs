@@ -1,20 +1,20 @@
 use std::future::Future;
 
 use crate::context::Context;
-pub trait Extract<C>: Sized
+pub trait ExtractFrom<C>: Sized
 where
     C: Context,
 {
-    fn extract(context: &C) -> impl Future<Output = Self> + Send;
+    fn extract_from(context: &C) -> impl Future<Output = Self> + Send;
 }
 
-impl<C, T, E> Extract<C> for Result<T, E>
+impl<C, T, E> ExtractFrom<C> for Result<T, E>
 where
-    T: Extract<C>,
+    T: ExtractFrom<C>,
     C: Context,
 {
-    async fn extract(context: &C) -> Self {
-        Ok(T::extract(context).await)
+    async fn extract_from(context: &C) -> Self {
+        Ok(T::extract_from(context).await)
     }
 }
 
@@ -23,14 +23,14 @@ where
 
 macro_rules! impl_tuples {
     ($($T:ident,)*) => {
-        impl<C, $($T,)*> Extract<C> for ($($T,)*)
+        impl<C, $($T,)*> ExtractFrom<C> for ($($T,)*)
         where
-            $($T: Extract<C> + Send,)*
+            $($T: ExtractFrom<C> + Send,)*
             C: Context,
         {
             #[allow(clippy::unused_unit, )]
-            async fn extract(_context: &C) -> Self {
-               ( $($T::extract(_context).await, )*)
+            async fn extract_from(_context: &C) -> Self {
+               ( $($T::extract_from(_context).await, )*)
             }
         }
     };

@@ -16,11 +16,13 @@ hyper = "1.3.1"
 pin-project-lite = "0.2.14"
 tokio = { version = "1", features = ["rt", "signal"], optional = true }
 tower = { version = "0.4", features = ["make"] }
+tsuki-scheduler = { version = "0.1.2", optional = true, features = ["async-scheduler", "cron", "tokio"] }
 
 [features]
 tokio = ["dep:tokio"]
 rt-tokio = ["tokio"]
 axum = ["dep:axum"]
+tsuki-scheduler = ["dep:tsuki-scheduler"]
 
 
 [dev-dependencies]

@@ -29,4 +29,8 @@ impl AnyMap {
             .remove(&TypeId::of::<T>())
             .map(|resource| Arc::downcast(resource).expect("fail to downcast resource"))
     }
+
+    pub fn has<T: Any + Send + Sync>(&self) -> bool {
+        self.0.contains_key(&TypeId::of::<T>())
+    }
 }
