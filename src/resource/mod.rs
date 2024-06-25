@@ -1,3 +1,5 @@
+pub mod update;
+
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
@@ -6,9 +8,11 @@ use std::{
 };
 
 use crossbeam::sync::ShardedLock;
-
+// e.g. signal -> config -> web server 
 use crate::{extract::ExtractFrom, Moonbase};
-pub trait MoonbaseResource: Send + Sync + Any + Clone {}
+pub trait MoonbaseResource: Send + Sync + Any + Clone {
+    fn subscribe_changes(&self) {}
+}
 
 /// Resource is for a global unique data for a moonbase, in other words, it is a singleton.
 #[derive(Debug, Clone)]
