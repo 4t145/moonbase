@@ -11,7 +11,7 @@ use futures::FutureExt;
 use crate::{
     components::{ComponentName, MoonbaseComponent},
     context::Context,
-    extract::ExtractFrom,
+    extract::TryExtractFrom,
     runtime::Runtime,
     Moonbase,
 };
@@ -20,7 +20,7 @@ pub struct DaemonDescriptor {
     pub name: Cow<'static, str>,
 }
 
-pub trait Daemon<C>: IntoFuture<Output = Self> + ExtractFrom<C> + Send + 'static
+pub trait Daemon<C>: IntoFuture<Output = Self> + TryExtractFrom<C> + Send + 'static
 where
     C: Context,
 {
@@ -99,6 +99,7 @@ impl Moonbase {
     where
         D: Daemon<Self>,
         D::IntoFuture: Send + 'static,
+        <D as TryExtractFrom<Moonbase>>::Error: std::error::Error,
     {
         // prepare the daemon
         let descriptor = D::descriptor();
@@ -113,7 +114,8 @@ impl Moonbase {
             prev_handle.kill_guard_and_wait().await;
             self.remove_component(&handler_name);
         }
-        let daemon = <anyhow::Result<D>>::extract_from(self).await?;
+        let daemon =
+            anyhow::Context::context(D::try_extract_from(self).await, "fail to extract daemon")?;
         let max_restart_time = daemon.max_restart_time();
         let cool_down_time = daemon.cool_down_time();
         let (finish_tx, finish_rx) = futures::channel::oneshot::channel::<()>();

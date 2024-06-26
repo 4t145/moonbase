@@ -1,9 +1,14 @@
-use std::{future::IntoFuture, pin::Pin};
+use std::{convert::Infallible, future::IntoFuture, pin::Pin};
 
 use futures::Future;
 use tsuki_scheduler::prelude::*;
 
-use crate::{daemon::Daemon, extract::ExtractFrom, resource::MoonbaseResource, Moonbase};
+use crate::{
+    daemon::Daemon,
+    extract::{ExtractFrom, TryExtractFrom},
+    resource::MoonbaseResource,
+    Moonbase,
+};
 
 impl MoonbaseResource for AsyncSchedulerClient<Tokio> {}
 
@@ -12,7 +17,6 @@ pub use tsuki_scheduler;
 pub type TsukiSchedulerClient = AsyncSchedulerClient<Tokio>;
 
 pub struct TsukiScheduler {
-    context: Moonbase,
     runner: AsyncSchedulerRunner<Tokio>,
 }
 
@@ -21,11 +25,15 @@ impl ExtractFrom<Moonbase> for TsukiScheduler {
         let runner = AsyncSchedulerRunner::tokio();
         context.set_resource(runner.client());
 
-        TsukiScheduler {
-            runner,
-            // shutdown_signal: context.shutdown_signal(),
-            context: context.clone(),
-        }
+        TsukiScheduler { runner }
+    }
+}
+
+impl TryExtractFrom<Moonbase> for TsukiScheduler {
+    type Error = Infallible;
+
+    async fn try_extract_from(context: &Moonbase) -> Result<Self, Self::Error> {
+        Ok(TsukiScheduler::extract_from(context).await)
     }
 }
 

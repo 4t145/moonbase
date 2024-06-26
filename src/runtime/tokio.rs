@@ -30,7 +30,7 @@ impl MoonbaseResource for Tokio {}
 impl Module<Moonbase> for Tokio {
     fn initialize(
         self,
-        context: &Moonbase,
+        context: Moonbase,
     ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
         context.set_resource(self);
         async move { Ok(()) }

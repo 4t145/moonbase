@@ -1,6 +1,7 @@
-use std::future::Future;
-
 use crate::context::Context;
+use std::{
+    future::{Future},
+};
 pub trait ExtractFrom<C>: Sized
 where
     C: Context,
@@ -8,14 +9,22 @@ where
     fn extract_from(context: &C) -> impl Future<Output = Self> + Send;
 }
 
-impl<C, T, E> ExtractFrom<C> for Result<T, E>
+impl<C, T> ExtractFrom<C> for Result<T, T::Error>
 where
-    T: ExtractFrom<C>,
+    T: TryExtractFrom<C>,
     C: Context,
 {
     async fn extract_from(context: &C) -> Self {
-        Ok(T::extract_from(context).await)
+        T::try_extract_from(context).await
     }
+}
+
+pub trait TryExtractFrom<C>: Sized
+where
+    C: Context,
+{
+    type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
+    fn try_extract_from(context: &C) -> impl Future<Output = Result<Self, Self::Error>> + Send;
 }
 
 // we may impl this in the future
@@ -31,6 +40,20 @@ macro_rules! impl_tuples {
             #[allow(clippy::unused_unit, )]
             async fn extract_from(_context: &C) -> Self {
                ( $($T::extract_from(_context).await, )*)
+            }
+        }
+        impl<C, $($T,)* > TryExtractFrom<C> for ($($T,)*)
+        where
+            $(
+                $T: TryExtractFrom<C> + Send,
+                $T::Error: std::error::Error + Send + Sync + 'static,
+            )*
+            C: Context,
+        {
+            type Error = anyhow::Error;
+            #[allow(clippy::unused_unit, )]
+            async fn try_extract_from(_context: &C) -> Result<Self, anyhow::Error> {
+               Ok(( $($T::try_extract_from(_context).await?, )*))
             }
         }
     };

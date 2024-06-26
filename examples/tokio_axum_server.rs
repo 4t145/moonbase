@@ -1,12 +1,11 @@
-use std::{future::IntoFuture, pin::Pin, time::Duration};
+use std::{convert::Infallible, future::IntoFuture, pin::Pin, time::Duration};
 
 use futures::Future;
 use moonbase::{
-    context::{Context, ContextExt},
+    context::ContextExt,
     daemon::Daemon,
     extension::tsuki_scheduler::{TsukiScheduler, TsukiSchedulerClient},
-    extract::ExtractFrom,
-    runtime::Tokio,
+    extract::{ExtractFrom, TryExtractFrom},
     signal::{Signal, SignalKey},
     AppContext, Moonbase,
 };
@@ -21,11 +20,24 @@ fn main() {
     rt.block_on(async_main()).unwrap();
 }
 
+// fn log<C, A, H>(context: &C, handler: &H) -> A::Ret
+// where
+//     C: Context,
+//     A: Adapter,
+//     H: Handler<C, A> + Clone,
+// {
+//     println!("Calling Handler");
+//     let result = handler.clone().apply(context);
+//     println!("Calling Handler");
+//     result
+// }
+
 async fn async_main() -> anyhow::Result<()> {
     let moonbase = Moonbase::new();
-    moonbase.load_module(Tokio::default()).await?;
-    moonbase.call(init_resource_infallible).await;
-    moonbase.fallible_call(init_resource).await?;
+    // moonbase.load_module(Tokio::default()).await?;
+    moonbase.call(init_resource).await?;
+    moonbase.call(async_with_result).await?;
+    moonbase.call(no_result).await;
     moonbase.run_daemon::<TsukiScheduler>().await?;
     let client = moonbase.get_resource::<TsukiSchedulerClient>().unwrap();
 
@@ -55,11 +67,47 @@ async fn init_resource() -> anyhow::Result<()> {
 
 async fn init_resource_infallible() {}
 
+async fn async_with_result(
+    res: MyResource,
+    res2: Result<MyFallibleResource, anyhow::Error>,
+) -> Result<(), Infallible> {
+    Ok(())
+}
+async fn no_result() {}
+fn sync() {}
+
+pub struct MyResource {}
+impl ExtractFrom<Moonbase> for MyResource {
+    async fn extract_from(_moonbase: &Moonbase) -> Self {
+        MyResource {}
+    }
+}
+impl TryExtractFrom<Moonbase> for MyResource {
+    type Error = Infallible;
+    async fn try_extract_from(_moonbase: &Moonbase) -> Result<Self, Infallible> {
+        Ok(MyResource {})
+    }
+}
+pub struct MyFallibleResource {}
+impl TryExtractFrom<Moonbase> for MyFallibleResource {
+    type Error = anyhow::Error;
+    async fn try_extract_from(_moonbase: &Moonbase) -> anyhow::Result<Self> {
+        Ok(MyFallibleResource {})
+    }
+}
 pub struct MyDaemon {}
 
 impl ExtractFrom<Moonbase> for MyDaemon {
     async fn extract_from(_moonbase: &Moonbase) -> Self {
         MyDaemon {}
+    }
+}
+
+impl TryExtractFrom<Moonbase> for MyDaemon {
+    type Error = Infallible;
+
+    async fn try_extract_from(_moonbase: &Moonbase) -> Result<Self, Self::Error> {
+        Ok(MyDaemon {})
     }
 }
 

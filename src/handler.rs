@@ -2,114 +2,163 @@
 //!
 //! Imaging we have a http client  
 
-use crate::context::Context;
-use crate::extract::ExtractFrom;
-use std::{future::Future, marker::PhantomData, pin::Pin};
+use std::{
+    future::{Future},
+    marker::PhantomData,
+    pin::{Pin},
+};
 
-pub trait Handler<Context, Adapter, Ret> {
-    fn apply(self, context: &Context) -> impl Future<Output = Ret> + Send;
+pub trait Handler<A>
+where
+    A: Adapter,
+{
+    fn apply(self, args: A::Args) -> impl Future<Output = A::Ret> + Send;
+}
+
+pub trait Adapter {
+    type Ret;
+    type Args;
 }
 
 /// Reduced and boxed handler
 pub type ReducedHandler<Context, Ret> =
     Box<dyn Fn(&Context) -> Pin<Box<dyn Future<Output = Ret> + Send + 'static>>>;
 
-pub trait HandlerExt<Context, Adapter, Ret>: Handler<Context, Adapter, Ret>
+// pub trait HandlerExt<C, A>: Handler<C, A>
+// where
+//     Self: 'static,
+//     A: Adapter,
+// {
+//     fn proxy<P, R>(self, proxy: P) -> Proxy<C, A, Self, P, R>
+//     where
+//         P: Fn(&C, &Self) -> R,
+//         Self: Sized,
+//     {
+//         Proxy::new(self, proxy)
+//     }
+// }
+
+// impl<C, A, H> HandlerExt<C, A> for H
+// where
+//     H: Handler<C, A> + 'static,
+//     A: Adapter + 'static,
+// {
+// }
+
+// pub struct ProxyAdapter<R> {
+//     marker: PhantomData<fn() -> R>,
+// }
+
+// impl<R> Adapter for ProxyAdapter<R> {
+//     type Ret = R;
+// }
+
+// pub struct Proxy<C, A, H, P, R>
+// where
+//     A: Adapter,
+//     H: Handler<C, A>,
+//     P: Fn(&C, &H) -> R,
+// {
+//     handler: H,
+//     proxy: P,
+//     #[allow(clippy::type_complexity)]
+//     marker: PhantomData<(fn(&C) -> A::Ret, A)>,
+// }
+
+// impl<C, A, H, P, R> Proxy<C, A, H, P, R>
+// where
+//     A: Adapter,
+//     H: Handler<C, A>,
+//     P: Fn(&C, &H) -> R,
+// {
+//     pub fn new(handler: H, proxy: P) -> Self {
+//         Self {
+//             handler,
+//             proxy,
+//             marker: Default::default(),
+//         }
+//     }
+// }
+
+// impl<C, A, P, H, R> Handler<C, ProxyAdapter<R>> for Proxy<C, A, H, P, R>
+// where
+//     A: Adapter,
+//     H: Handler<C, A>,
+//     P: Fn(&C, &H) -> R,
+// {
+//     fn apply(self, context: &C) -> R {
+//         (self.proxy)(context, &self.handler)
+//     }
+// }
+
+pub struct Fallible<A, T, E> {
+    marker: PhantomData<(A, fn() -> (T, E))>,
+}
+
+impl<A, T, E> Adapter for Fallible<A, T, E>
 where
-    Adapter: 'static,
-    Ret: 'static,
-    Self: 'static,
+    A: Adapter,
 {
-    fn reduce(self) -> ReducedHandler<Context, Ret>
-    where
-        Self: Clone + Sized + Send,
-        Context: Clone + Send + 'static,
-    {
-        Box::new(move |context| {
-            let context = context.clone();
-            let this = self.clone();
-            Box::pin(async move { this.apply(&context).await })
-        })
+    type Args = Result<A::Args, E>;
+    type Ret = Result<T, E>;
+}
+
+impl<H, A, T, E> Handler<Fallible<A, T, E>> for H
+where
+    A: Adapter<Ret = Result<T, E>>,
+    H: Handler<A> + Send,
+    <A as Adapter>::Args: std::marker::Send,
+    E: Send,
+{
+    #[allow(unused_variables, non_snake_case)]
+    async fn apply(self, args: Result<A::Args, E>) -> Result<T, E> {
+        Handler::<A>::apply(self, args?).await
     }
 }
 
-pub struct Proxy<C, A, R, H, P>
+pub struct Call<A, Fut> {
+    marker: PhantomData<fn(A) -> Fut>,
+}
+
+impl<A, Fut> Adapter for Call<A, Fut>
 where
-    H: Handler<C, A, R>,
-    P: Fn(&C, &H),
+    Fut: Future,
 {
-    handler: H,
-    proxy: P,
-    #[allow(clippy::type_complexity)]
-    marker: PhantomData<(fn(&C) -> R, A)>,
-}
-
-impl<C, A, R, H, P> Proxy<C, A, R, H, P>
-where
-    H: Handler<C, A, R>,
-    P: Fn(&C, &H),
-{
-    pub fn new(handler: H, proxy: P) -> Self {
-        Self {
-            handler,
-            proxy,
-            marker: Default::default(),
-        }
-    }
-}
-
-impl<C, A, R, H, P> Handler<C, A, R> for Proxy<C, A, R, H, P>
-where
-    H: Handler<C, A, R>,
-    P: Fn(&C, &H),
-{
-    fn apply(self, context: &C) -> impl Future<Output = R> + Send {
-        (self.proxy)(context, &self.handler);
-        self.handler.apply(context)
-    }
-}
-
-pub struct FallibleFn<T, E> {
-    marker: PhantomData<fn() -> (T, E)>,
-}
-
-pub struct InfallibleFn<T> {
-    marker: PhantomData<fn() -> T>,
+    type Ret = Fut::Output;
+    type Args = A;
 }
 
 macro_rules! impl_handler {
     ($($T:ident),*) => {
-        impl<F, C, $($T,)* Ret, Fut> Handler<C, InfallibleFn<($($T,)*)>, Ret> for F
+        impl<F, $($T,)* Fut> Handler<Call<($($T,)*), Fut>> for F
         where
-            $($T: ExtractFrom<C> + Send,)*
-            C: Context,
-            Fut: Future<Output = Ret> + Send + 'static,
-            Self: Fn($($T,)*) -> Fut + Send,
+            $($T: Send,)*
+            Self: Fn($($T,)*) -> Fut,
+            Fut: Future + Send,
+            F: Send
         {
             #[allow(unused_variables, non_snake_case)]
-            async fn apply(self, context: &C) -> Ret {
-                $(
-                    let $T = $T::extract_from(context).await;
-                )*
+            async fn apply(self, args: ($($T,)*)) -> Fut::Output {
+                let ($($T,)*) = args;
                 self($($T,)*).await
             }
         }
-        impl<F, C, $($T,)* Ret, Fut, Error> Handler<C, FallibleFn<($($T,)*), Error>, Result<Ret, Error>> for F
-        where
-            $(Result<$T, Error>: ExtractFrom<C> + Send,)*
-            $($T: Send,)*
-            C: Context,
-            Fut: Future<Output = Result<Ret, Error>> + Send + 'static,
-            F: Fn($($T,)*) -> Fut + Send,
-        {
-            #[allow(unused_variables, non_snake_case)]
-            async fn apply(self, context: &C) -> Result<Ret, Error> {
-                $(
-                    let $T = <Result<$T, Error>>::extract_from(context).await?;
-                )*
-                (self)($($T,)*).await
-            }
-        }
+        // impl<F, C, $($T,)* Ret, Fut, Error> Handler<C, FallibleFn<($($T,)*), Error>, Result<Ret, Error>> for F
+        // where
+        //     $(Result<$T, Error>: ExtractFrom<C> + Send,)*
+        //     $($T: Send,)*
+        //     C: Context,
+        //     Fut: Future<Output = Result<Ret, Error>> + Send + 'static,
+        //     F: Fn($($T,)*) -> Fut + Send,
+        // {
+        //     #[allow(unused_variables, non_snake_case)]
+        //     async fn apply(self, context: &C) -> Result<Ret, Error> {
+        //         $(
+        //             let $T = <Result<$T, Error>>::extract_from(context).await?;
+        //         )*
+        //         (self)($($T,)*).await
+        //     }
+        // }
     };
 }
 

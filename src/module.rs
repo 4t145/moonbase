@@ -1,27 +1,34 @@
-use std::any;
+use std::{any};
 
-use crate::{context::Context, handler::Handler};
+use crate::{
+    context::Context,
+    handler::{Adapter, Handler},
+};
 
-pub trait Module<C: Context> {
+pub trait Module<C: Context>: Send + 'static {
     fn module_name() -> &'static str {
         any::type_name::<Self>()
     }
-    fn initialize(
-        self,
-        context: &C,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    fn initialize(self, context: C)
+        -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 }
 
-pub struct ModuleHandler<M: Module<C>, C: Context> {
+pub struct ModuleAdapter<M: Module<C>, C: Context> {
     marker: std::marker::PhantomData<fn(C) -> M>,
 }
 
-impl<M, C> Handler<C, ModuleHandler<M, C>, anyhow::Result<()>> for M
+impl<M: Module<C>, C: Context> Adapter for ModuleAdapter<M, C> {
+    type Args = C;
+    type Ret = anyhow::Result<()>;
+}
+
+impl<M, C> Handler<ModuleAdapter<M, C>> for M
 where
     M: Module<C> + Send,
     C: Context,
 {
-    async fn apply(self, context: &C) -> anyhow::Result<()> {
-        self.initialize(context).await
+    async fn apply(self, context: C) -> anyhow::Result<()> {
+        let fut = self.initialize(context);
+        fut.await
     }
 }

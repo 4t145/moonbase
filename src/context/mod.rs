@@ -1,21 +1,25 @@
 use std::marker::PhantomData;
 
+use futures::Future;
+
 use crate::{
     extract::ExtractFrom,
-    handler::{FallibleFn, Handler},
+    handler::{Adapter, Call, Handler},
     module::Module,
 };
 
 pub trait Context: Sized + Send + Sync + 'static {
-    fn call<Args, Ret, F>(&self, handler: F) -> impl std::future::Future<Output = Ret> + Send
+    fn call_handler<A, H>(&self, handler: H) -> impl Future<Output = A::Ret> + Send
     where
-        F: Handler<Self, Args, Ret> + Send,
+        H: Handler<A> + Send,
+        A: Adapter,
+        A::Args: ExtractFrom<Self>,
     {
-        handler.apply(self)
+        async move { handler.apply(self.extract().await).await }
     }
-    fn extract<T>(&self) -> impl std::future::Future<Output = T> + Send
+    fn extract<T>(&self) -> impl Future<Output = T> + Send
     where
-        T: ExtractFrom<Self> + Send,
+        T: ExtractFrom<Self>,
     {
         T::extract_from(self)
     }
@@ -24,42 +28,42 @@ pub trait Context: Sized + Send + Sync + 'static {
 pub trait ContextExt: Context {
     /// Call a fallible function with the context.
     ///
-    /// This is a convenience method that calls the [`Context::call`] method on the handler,
-    /// with a [`FallibleFn`] adapter.
-    fn fallible_call<Args, Ret, Error, F>(
-        &self,
-        handler: F,
-    ) -> impl std::future::Future<Output = Result<Ret, Error>> + Send
+    /// This is a convenience method that calls the [`Context::call_handler`] method on the handler,
+    /// with a [`Call`] adapter.
+    fn call<T, R, H>(&self, handler: H) -> impl Future<Output = R::Output>
     where
-        F: Handler<Self, FallibleFn<Args, Error>, Result<Ret, Error>> + Send,
+        H: Handler<Call<T, R>> + Send,
+        T: ExtractFrom<Self>,
+        R: Future,
     {
-        self.call(handler)
+        self.call_handler(handler)
     }
 
-    /// Call an infallible function with the context.
-    ///
-    /// This is a convenience method that calls the [`Context::call`] method on the handler,
-    /// with an [`InfallibleFn`] adapter.
-    fn infallible_call<Args, Ret, F>(
-        &self,
-        handler: F,
-    ) -> impl std::future::Future<Output = Ret> + Send
-    where
-        F: Handler<Self, FallibleFn<Args, ()>, Ret> + Send,
-    {
-        self.call(handler)
-    }
+    // /// Call an infallible function with the context.
+    // ///
+    // /// This is a convenience method that calls the [`Context::call`] method on the handler,
+    // /// with an [`InfallibleFn`] adapter.
+    // fn infallible_call<Args, Ret, F>(
+    //     &self,
+    //     handler: F,
+    // ) -> impl std::future::Future<Output = Ret> + Send
+    // where
+    //     F: Handler<Self, Fallible<Args, ()>, Ret> + Send,
+    // {
+    //     self.call(handler)
+    // }
 
     /// Load a module into the context.
-    ///
+
     /// This is a convenience method that calls the [`Context::call`] method on the module,
-    /// with a [`ModuleHandler`](`crate::module::ModuleHandler`) adapter,
+    /// with a [`ModuleAdapter`](`crate::module::ModuleAdapter`) adapter,
     /// in witch [`Module::initialize`] is called.
-    fn load_module<M>(&self, module: M) -> impl std::future::Future<Output = anyhow::Result<()>>
+    fn load_module<M>(&self, module: M) -> impl Future<Output = anyhow::Result<()>>
     where
         M: Module<Self> + Send,
+        Self: ExtractFrom<Self>,
     {
-        self.call(module)
+        self.call_handler::<crate::module::ModuleAdapter<M, Self>, M>(module)
     }
 }
 
