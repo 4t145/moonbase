@@ -12,7 +12,7 @@ pub trait MoonbaseResource: Send + Sync + Any + Clone {}
 
 /// Resource is for a global unique data for a moonbase, in other words, it is a singleton.
 #[derive(Debug, Clone)]
-pub struct Resource<T>(T);
+pub struct Resource<T>(pub T);
 
 impl<T> AsRef<T> for Resource<T> {
     fn as_ref(&self) -> &T {

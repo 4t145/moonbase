@@ -1,14 +1,8 @@
-use std::borrow::Cow;
-use std::convert::Infallible;
-
-use axum::http::request::Parts;
-use axum::response::IntoResponse;
-
 use crate::components::{ComponentName, MoonbaseComponent};
+use crate::resource::{MoonbaseResource, Resource};
 use crate::Moonbase;
 
 impl MoonbaseComponent for axum::Router<Moonbase> {}
-
 
 impl Moonbase {
     pub fn insert_axum_router(
@@ -32,5 +26,36 @@ impl Moonbase {
                 router.merge(component)
             });
         router
+    }
+}
+
+#[async_trait::async_trait]
+impl axum::extract::FromRequestParts<Moonbase> for Moonbase {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        _parts: &mut axum::http::request::Parts,
+        state: &Moonbase,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(state.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl<R> axum::extract::FromRequestParts<Moonbase> for Resource<R>
+where
+    R: MoonbaseResource,
+{
+    type Rejection = String;
+
+    async fn from_request_parts(
+        _parts: &mut axum::http::request::Parts,
+        state: &Moonbase,
+    ) -> Result<Self, Self::Rejection> {
+        let resource = state.get_resource::<R>();
+        match resource {
+            Some(resource) => Ok(Resource(resource)),
+            None => Err(format!("Resource {} not found", std::any::type_name::<R>())),
+        }
     }
 }

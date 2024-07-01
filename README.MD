@@ -6,6 +6,7 @@
 
 ## What can Moonbase Provide?
 
+It's basically a easy-to-use **state** for your web framework. And you can build your own business context based on a `AppContext` aka `Moonbase`.
 
 
 ### A way to get **RESOURCE**
@@ -54,5 +55,17 @@ async fn run(app: &Moonbase) {
     app.run_daemon::<DoSomeRandomThingService>().await?;
     let handle = app.run_daemon::<ListenShutdownSignal>().await?;
     handle.wait().await;
+}
+```
+
+### A way to share **SIGNAL**
+```rust
+pub struct MySignalSymbol;
+async fn async_main() -> anyhow::Result<()> {
+    moonbase.set_signal(SignalKey::from_type::<MySignalSymbol>(), Signal::new());
+    let signal = moonbase.get_signal(&SignalKey::symbol::<MySignalSymbol>()).unwrap();
+    signal.get_sender().send();
+    signal.recv().await;
+    Ok(())
 }
 ```

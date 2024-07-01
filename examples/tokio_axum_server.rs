@@ -3,15 +3,7 @@ use std::{convert::Infallible, future::IntoFuture, pin::Pin, time::Duration};
 use axum::extract::State;
 use futures::Future;
 use moonbase::{
-    components::ComponentName,
-    context::ContextExt,
-    daemon::Daemon,
-    extension::tsuki_scheduler::{TsukiScheduler, TsukiSchedulerClient},
-    extract::{ExtractFrom, TryExtractFrom},
-    module::Module,
-    runtime::Tokio,
-    signal::{Signal, SignalKey},
-    AppContext, Moonbase,
+    components::ComponentName, context::ContextExt, daemon::Daemon, extension::tsuki_scheduler::{TsukiScheduler, TsukiSchedulerClient}, extract::{ExtractFrom, TryExtractFrom}, module::Module, resource::{MoonbaseResource, Resource}, runtime::Tokio, signal::{Signal, SignalKey}, AppContext, Moonbase
 };
 use tsuki_scheduler::{Task, TaskUid};
 
@@ -35,7 +27,10 @@ async fn async_main() -> anyhow::Result<()> {
     moonbase.run_daemon::<TsukiScheduler>().await?;
     let client = moonbase.get_resource::<TsukiSchedulerClient>().unwrap();
     let handle = moonbase.run_daemon::<MyDaemon>().await?;
-    moonbase.set_signal(SignalKey::from_type::<Moonbase>(), Signal::new());
+    moonbase.set_signal(SignalKey::symbol::<Moonbase>(), Signal::new());
+    let signal = moonbase.get_signal(&SignalKey::symbol::<Moonbase>()).unwrap();
+    signal.get_sender().send();
+    signal.recv().await;
     client.add_task(
         TaskUid::uuid(),
         Task::tokio(None, || async {
@@ -62,8 +57,10 @@ async fn async_with_result(
 }
 async fn no_result() {}
 fn sync() {}
-
+#[derive(Debug, Clone)]
 pub struct MyResource {}
+impl MoonbaseResource for MyResource {}
+
 impl ExtractFrom<Moonbase> for MyResource {
     async fn extract_from(_moonbase: &Moonbase) -> Self {
         MyResource {}
@@ -134,7 +131,7 @@ impl AsRef<AppContext> for SomeTransitionContext {
 
 pub struct HelloModule {}
 
-async fn get_handler(State(mb): State<Moonbase>) -> String {
+async fn get_handler(mb: Moonbase, Resource(_my_resource): Resource<MyResource>) -> String {
     let debug = format!("{:#?}", mb);
     debug
 }
@@ -143,7 +140,7 @@ impl Module<Moonbase> for HelloModule {
     async fn initialize(self, context: Moonbase) -> anyhow::Result<()> {
         let router =
             axum::Router::new().route("/", axum::routing::get(get_handler));
-        context.insert_axum_router(&ComponentName::new_type_tag::<Self>(), router);
+        context.insert_axum_router(&ComponentName::new_symbol::<Self>(), router);
         Ok(())
     }
 }

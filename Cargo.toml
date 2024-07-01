@@ -13,18 +13,24 @@ crossbeam = "0.8.4"
 future-utils = "0.12.1"
 futures = "0.3.30"
 hyper = "1.3.1"
+ntex = { version = "2.0.3", optional = true }
 pin-project-lite = "0.2.14"
 tokio = { version = "1", features = ["rt", "signal"], optional = true }
 tower = { version = "0.4", features = ["make"] }
-tsuki-scheduler = { version = "0.1.2", optional = true, features = ["async-scheduler", "cron", "tokio"] }
+tsuki-scheduler = { version = "0.1.2", optional = true, features = [
+    "async-scheduler",
+    "cron",
+    "tokio",
+] }
+async-trait = { version = "0.1", optional = true }
 
 [features]
 tokio = ["dep:tokio"]
 rt-tokio = ["tokio"]
-axum = ["dep:axum"]
+axum = ["dep:axum", "dep:async-trait"]
+ntex = ["dep:ntex"]
 tsuki-scheduler = ["dep:tsuki-scheduler"]
 
 
 [dev-dependencies]
-async-trait = "0.1.80"
 tokio = { version = "1", features = ["full"] }

@@ -25,6 +25,7 @@ where
     fn try_extract_from(context: &C) -> impl Future<Output = Result<Self, Self::Error>> + Send;
 }
 
+
 // we may impl this in the future
 // pub struct Parallelized<T>(T);
 
@@ -58,6 +59,6 @@ macro_rules! extract_tuples {
 }
 
 crate::tuples!(
-    extract_tuples! 
+    extract_tuples!
     T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15
 );

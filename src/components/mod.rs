@@ -55,6 +55,8 @@ impl ComponentRepositoryInner {
     }
 }
 
+
+
 impl Moonbase {
     pub fn set_component<T: MoonbaseComponent>(
         &self,

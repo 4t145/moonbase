@@ -9,7 +9,7 @@ use crate::{context::Context, daemon::Daemon};
 #[non_exhaustive]
 pub(crate) enum ComponentDomain {
     DaemonHandle,
-    TypeTag,
+    Symbol,
     Custom,
 }
 
@@ -18,7 +18,7 @@ impl std::fmt::Display for ComponentDomain {
         match self {
             ComponentDomain::DaemonHandle => write!(f, "Daemon"),
             ComponentDomain::Custom => write!(f, "Custom"),
-            ComponentDomain::TypeTag => write!(f, "TypeTag"),
+            ComponentDomain::Symbol => write!(f, "Symbol"),
         }
     }
 }
@@ -94,14 +94,14 @@ impl<T: Any> ComponentName<T> {
         let bytes = name.as_bytes().to_vec();
         Self::new_with_domain(name, bytes, ComponentDomain::Custom)
     }
-    pub fn new_type_tag<Tag: Any>() -> Self {
+    pub fn new_symbol<Tag: Any>() -> Self {
         let type_id = TypeId::of::<Tag>();
         let name = std::any::type_name::<Tag>();
         let hashed = crate::utils::hash(&type_id);
         Self::new_with_domain(
             name,
             hashed.to_be_bytes().to_vec(),
-            ComponentDomain::TypeTag,
+            ComponentDomain::Symbol,
         )
     }
     /// get the readable name

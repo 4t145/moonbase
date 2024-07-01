@@ -8,6 +8,7 @@
     "rust-analyzer.cargo.features": [
         "rt-tokio",
         "axum",
-        "tsuki-scheduler"
+        "tsuki-scheduler",
+        "ntex"
     ]
 }

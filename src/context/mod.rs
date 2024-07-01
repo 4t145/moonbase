@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use futures::Future;
 
 use crate::{
-    extract::ExtractFrom,
+    extract::{ExtractFrom, TryExtractFrom},
     handler::{Adapter, Call, Handler},
     module::Module,
 };
@@ -22,6 +22,12 @@ pub trait Context: Sized + Send + Sync + 'static {
         T: ExtractFrom<Self>,
     {
         T::extract_from(self)
+    }
+    fn try_extract<T>(&self) -> impl Future<Output = Result<T, T::Error>> + Send
+    where
+        T: TryExtractFrom<Self>,
+    {
+        T::try_extract_from(self)
     }
 }
 

@@ -15,7 +15,7 @@ pub struct SignalKey {
 }
 
 impl SignalKey {
-    pub fn from_type<T: Any>() -> Self {
+    pub fn symbol<T: Any>() -> Self {
         Self {
             id: Cow::Owned(
                 crate::utils::hash(&TypeId::of::<T>())
@@ -41,18 +41,18 @@ impl SignalKey {
     }
 }
 
-pub struct TypedSignal<T> {
-    marker: std::marker::PhantomData<fn(T)>,
+pub struct SignalSymbol<S> {
+    marker: std::marker::PhantomData<fn(S)>,
     signal: Signal,
 }
 
-impl<T: std::any::Any> TypedSignal<T> {
+impl<S: std::any::Any> SignalSymbol<S> {
     pub fn key() -> SignalKey {
-        SignalKey::from_type::<T>()
+        SignalKey::symbol::<S>()
     }
 }
 
-impl<T> Default for TypedSignal<T> {
+impl<S> Default for SignalSymbol<S> {
     fn default() -> Self {
         Self {
             marker: std::marker::PhantomData,
@@ -61,7 +61,8 @@ impl<T> Default for TypedSignal<T> {
     }
 }
 
-impl<T> Clone for TypedSignal<T> {
+impl<S> Clone for SignalSymbol<S
+> {
     fn clone(&self) -> Self {
         Self {
             marker: std::marker::PhantomData,
@@ -70,11 +71,11 @@ impl<T> Clone for TypedSignal<T> {
     }
 }
 
-impl<T> std::fmt::Debug for TypedSignal<T> {
+impl<S> std::fmt::Debug for SignalSymbol<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TypedSignal")
             .field("signal", &self.signal)
-            .field("type", &std::any::type_name::<T>())
+            .field("type", &std::any::type_name::<S>())
             .finish()
     }
 }
