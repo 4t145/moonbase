@@ -9,21 +9,25 @@ use crate::{context::Context, daemon::Daemon};
 #[non_exhaustive]
 pub(crate) enum ComponentDomain {
     DaemonHandle,
+    TypeTag,
     Custom,
 }
 
 impl std::fmt::Display for ComponentDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ComponentDomain::DaemonHandle => write!(f, "daemon"),
-            ComponentDomain::Custom => write!(f, "custom"),
+            ComponentDomain::DaemonHandle => write!(f, "Daemon"),
+            ComponentDomain::Custom => write!(f, "Custom"),
+            ComponentDomain::TypeTag => write!(f, "TypeTag"),
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentName<T: Any> {
     /// domain of the component
     domain: ComponentDomain,
+    bytes: Cow<'static, [u8]>,
     /// readable name of the component
     readable_name: Cow<'static, str>,
     /// hash cache of the readable name
@@ -46,27 +50,30 @@ impl<T: Any> std::fmt::Display for ComponentName<T> {
 }
 
 impl<T: Any> ComponentName<T> {
-    fn hash_fields(id: &str, type_id: TypeId, domain: ComponentDomain) -> u64 {
+    fn hash_fields(bytes: &[u8], type_id: TypeId, domain: ComponentDomain) -> u64 {
         let mut hasher = DefaultHasher::new();
-        id.hash(&mut hasher);
+        bytes.hash(&mut hasher);
         type_id.hash(&mut hasher);
         domain.hash(&mut hasher);
         hasher.finish()
     }
     /// create a new ComponentName
     pub(crate) fn new_with_domain(
-        id: impl Into<Cow<'static, str>>,
+        name: impl Into<Cow<'static, str>>,
+        bytes: impl Into<Cow<'static, [u8]>>,
         domain: ComponentDomain,
     ) -> Self {
-        let id = id.into();
+        let name = name.into();
+        let bytes = bytes.into();
         let type_id = TypeId::of::<T>();
-        let hash = Self::hash_fields(&id, type_id, domain);
+        let hash = Self::hash_fields(&bytes, type_id, domain);
         ComponentName {
-            readable_name: id,
+            readable_name: name,
             hash,
             domain,
             type_id: TypeId::of::<T>(),
             _marker: std::marker::PhantomData,
+            bytes,
         }
     }
     pub fn new_daemon_handle<D, C>() -> Self
@@ -74,11 +81,28 @@ impl<T: Any> ComponentName<T> {
         C: Context,
         D: Daemon<C>,
     {
-        let id = D::descriptor().name;
-        Self::new_with_domain(id, ComponentDomain::DaemonHandle)
+        let bytes = crate::utils::hash(&TypeId::of::<D>());
+        let name = std::any::type_name::<D>();
+        Self::new_with_domain(
+            name,
+            bytes.to_be_bytes().to_vec(),
+            ComponentDomain::DaemonHandle,
+        )
     }
     pub fn new(id: impl Into<Cow<'static, str>>) -> Self {
-        Self::new_with_domain(id, ComponentDomain::Custom)
+        let name = id.into();
+        let bytes = name.as_bytes().to_vec();
+        Self::new_with_domain(name, bytes, ComponentDomain::Custom)
+    }
+    pub fn new_type_tag<Tag: Any>() -> Self {
+        let type_id = TypeId::of::<Tag>();
+        let name = std::any::type_name::<Tag>();
+        let hashed = crate::utils::hash(&type_id);
+        Self::new_with_domain(
+            name,
+            hashed.to_be_bytes().to_vec(),
+            ComponentDomain::TypeTag,
+        )
     }
     /// get the readable name
     pub fn readable_name(&self) -> &str {
@@ -88,11 +112,9 @@ impl<T: Any> ComponentName<T> {
     pub fn hash(&self) -> u64 {
         self.hash
     }
-    /// reset the readable name, and the hash value will be recalculated
-    pub fn reset(&mut self, id: impl Into<Cow<'static, str>>) {
-        let id = id.into();
-        self.hash = Self::hash_fields(&id, self.type_id, self.domain);
-        self.readable_name = id;
+    /// reset the readable name
+    pub fn reset_name(&mut self, name: impl Into<Cow<'static, str>>) {
+        self.readable_name = name.into();
     }
 }
 

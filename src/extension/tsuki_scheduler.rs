@@ -16,6 +16,7 @@ pub use tsuki_scheduler;
 
 pub type TsukiSchedulerClient = AsyncSchedulerClient<Tokio>;
 
+#[derive(Debug)]
 pub struct TsukiScheduler {
     runner: AsyncSchedulerRunner<Tokio>,
 }

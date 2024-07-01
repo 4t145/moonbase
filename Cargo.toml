@@ -26,4 +26,5 @@ tsuki-scheduler = ["dep:tsuki-scheduler"]
 
 
 [dev-dependencies]
+async-trait = "0.1.80"
 tokio = { version = "1", features = ["full"] }

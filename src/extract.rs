@@ -1,7 +1,5 @@
 use crate::context::Context;
-use std::{
-    future::{Future},
-};
+use std::future::Future;
 pub trait ExtractFrom<C>: Sized
 where
     C: Context,
@@ -30,8 +28,8 @@ where
 // we may impl this in the future
 // pub struct Parallelized<T>(T);
 
-macro_rules! impl_tuples {
-    ($($T:ident,)*) => {
+macro_rules! extract_tuples {
+    ($($T:ident)*) => {
         impl<C, $($T,)*> ExtractFrom<C> for ($($T,)*)
         where
             $($T: ExtractFrom<C> + Send,)*
@@ -59,12 +57,7 @@ macro_rules! impl_tuples {
     };
 }
 
-impl_tuples!();
-impl_tuples!(T0,);
-impl_tuples!(T0, T1,);
-impl_tuples!(T0, T1, T2,);
-impl_tuples!(T0, T1, T2, T3,);
-impl_tuples!(T0, T1, T2, T3, T4,);
-impl_tuples!(T0, T1, T2, T3, T4, T5,);
-impl_tuples!(T0, T1, T2, T3, T4, T5, T6,);
-impl_tuples!(T0, T1, T2, T3, T4, T5, T6, T7,);
+crate::tuples!(
+    extract_tuples! 
+    T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15
+);

@@ -2,7 +2,6 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 mod name;
 use crossbeam::sync::ShardedLock;
 pub use name::*;
-
 use crate::Moonbase;
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy, Default)]
 pub struct Entity {

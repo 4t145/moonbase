@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow,
+    any::{Any, TypeId},
     future::IntoFuture,
     sync::{atomic::AtomicUsize, Arc},
     time::Duration,
@@ -17,16 +17,17 @@ use crate::{
 };
 
 pub struct DaemonDescriptor {
-    pub name: Cow<'static, str>,
+    pub type_id: TypeId,
 }
 
-pub trait Daemon<C>: IntoFuture<Output = Self> + TryExtractFrom<C> + Send + 'static
+pub trait Daemon<C>:
+    IntoFuture<Output = Self> + TryExtractFrom<C> + Send + 'static + Any + std::fmt::Debug
 where
     C: Context,
 {
     fn descriptor() -> DaemonDescriptor {
         DaemonDescriptor {
-            name: std::any::type_name::<Self>().into(),
+            type_id: std::any::TypeId::of::<Self>(),
         }
     }
     fn max_restart_time(&self) -> Option<usize> {
@@ -102,14 +103,13 @@ impl Moonbase {
         <D as TryExtractFrom<Moonbase>>::Error: std::error::Error,
     {
         // prepare the daemon
-        let descriptor = D::descriptor();
         let handler_name = ComponentName::new_daemon_handle::<D, Self>();
         // fetch prev handle
         if let Some(prev_handle) = self.get_component::<DaemonHandle>(&handler_name) {
             anyhow::ensure!(
                 !prev_handle.is_guarded,
-                "daemon {} is still running",
-                descriptor.name
+                "daemon {:?} is still running",
+                &self
             );
             prev_handle.kill_guard_and_wait().await;
             self.remove_component(&handler_name);

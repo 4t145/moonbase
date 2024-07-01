@@ -1,7 +1,8 @@
 use std::{
     any::{Any, TypeId},
     borrow::Cow,
-    sync::{atomic::AtomicBool, Arc},
+    collections::VecDeque,
+    sync::{atomic::AtomicU64, Arc, Mutex},
     task::Waker,
 };
 
@@ -41,7 +42,7 @@ impl SignalKey {
 }
 
 pub struct TypedSignal<T> {
-    marker: std::marker::PhantomData<T>,
+    marker: std::marker::PhantomData<fn(T)>,
     signal: Signal,
 }
 
@@ -90,39 +91,49 @@ impl Signal {
         }
     }
 
-    pub fn wait(&self) -> WaitingSignal {
+    pub fn recv(&self) -> WaitingSignal {
         WaitingSignal {
             inner: self.inner.clone(),
-            waiting: false,
-            ok: Arc::new(AtomicBool::new(false)),
+            latest: self
+                .inner
+                .version
+                .load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 
-    pub fn get_trigger(&self) -> SignalTrigger {
-        SignalTrigger {
+    pub fn get_sender(&self) -> SignalSender {
+        SignalSender {
             inner: self.inner.clone(),
         }
     }
 }
 #[derive(Debug, Default)]
 struct WaitList {
-    queue: crossbeam::queue::SegQueue<(Waker, Arc<AtomicBool>)>,
+    queue: Mutex<VecDeque<Waker>>,
+    version: AtomicU64,
 }
 
 impl WaitList {
     pub fn new() -> Self {
         Self {
-            queue: crossbeam::queue::SegQueue::new(),
+            queue: Mutex::default(),
+            version: AtomicU64::new(0),
         }
     }
 
-    pub fn push(&self, waker: Waker, state: Arc<AtomicBool>) {
-        self.queue.push((waker, state));
+    pub fn push(&self, waker: Waker) {
+        self.queue.lock().expect("never poisoned").push_back(waker);
     }
 
     pub fn consume(&self) {
-        while let Some((waker, state)) = self.queue.pop() {
-            state.store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut exchange_queue = VecDeque::new();
+        {
+            let mut queue = self.queue.lock().expect("never poisoned");
+            std::mem::swap(&mut *queue, &mut exchange_queue);
+            self.version
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        for waker in exchange_queue {
             waker.wake();
         }
     }
@@ -131,8 +142,7 @@ impl WaitList {
 #[derive(Debug, Clone)]
 pub struct WaitingSignal {
     inner: Arc<WaitList>,
-    ok: Arc<AtomicBool>,
-    waiting: bool,
+    latest: u64,
 }
 
 impl Future for WaitingSignal {
@@ -142,11 +152,14 @@ impl Future for WaitingSignal {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        if !self.as_ref().waiting {
-            self.inner.push(cx.waker().clone(), self.ok.clone());
-            self.as_mut().waiting = true;
-            std::task::Poll::Pending
-        } else if self.ok.load(std::sync::atomic::Ordering::Relaxed) {
+        let version = self
+            .inner
+            .version
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let latest = self.latest;
+        self.inner.push(cx.waker().clone());
+        if version > latest {
+            self.latest += 1;
             std::task::Poll::Ready(())
         } else {
             std::task::Poll::Pending
@@ -154,12 +167,12 @@ impl Future for WaitingSignal {
     }
 }
 #[derive(Debug, Clone)]
-pub struct SignalTrigger {
+pub struct SignalSender {
     inner: Arc<WaitList>,
 }
 
-impl SignalTrigger {
-    pub fn trigger(&self) {
+impl SignalSender {
+    pub fn send(&self) {
         self.inner.consume();
     }
 }
@@ -184,7 +197,7 @@ impl Moonbase {
     pub fn trigger_signal(&self, key: &SignalKey) {
         let signals = self.signals.read().unwrap();
         if let Some(signal) = signals.get(key) {
-            signal.get_trigger().trigger();
+            signal.get_sender().send();
         }
     }
 }

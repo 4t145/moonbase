@@ -8,7 +8,6 @@ use resource::ResourceRepository;
 use signal::{Signal, SignalKey};
 
 pub mod components;
-pub mod config;
 pub mod context;
 pub mod daemon;
 pub mod extension;
