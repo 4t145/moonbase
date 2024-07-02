@@ -9,7 +9,10 @@ use crossbeam::sync::ShardedLock;
 // e.g. signal -> config -> web server
 use crate::{extract::ExtractFrom, Moonbase};
 pub trait MoonbaseResource: Send + Sync + Any + Clone {}
-
+impl<T> MoonbaseResource for T 
+where 
+    T: Send + Sync + Any + Clone
+{}
 /// Resource is for a global unique data for a moonbase, in other words, it is a singleton.
 #[derive(Debug, Clone)]
 pub struct Resource<T>(pub T);

@@ -26,8 +26,11 @@ where
 }
 
 
-// we may impl this in the future
-// pub struct Parallelized<T>(T);
+macro_rules! fora {
+    () => {
+        
+    };
+}
 
 macro_rules! extract_tuples {
     ($($T:ident)*) => {

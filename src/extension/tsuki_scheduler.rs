@@ -6,11 +6,8 @@ use tsuki_scheduler::prelude::*;
 use crate::{
     daemon::Daemon,
     extract::{ExtractFrom, TryExtractFrom},
-    resource::MoonbaseResource,
     Moonbase,
 };
-
-impl MoonbaseResource for AsyncSchedulerClient<Tokio> {}
 
 pub use tsuki_scheduler;
 

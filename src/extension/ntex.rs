@@ -5,7 +5,6 @@ use ntex::web;
 pub use ntex::service::Service;
 
 use crate::{resource::MoonbaseResource, Moonbase};
-
 impl<E, R> ntex::web::FromRequest<E> for crate::resource::Resource<R>
 where
     R: MoonbaseResource,

@@ -33,4 +33,10 @@ tsuki-scheduler = ["dep:tsuki-scheduler"]
 
 
 [dev-dependencies]
+serde = { version = "1.0.203", features = ["derive"] }
+surrealdb = "1.5.3"
 tokio = { version = "1", features = ["full"] }
+
+[[examples]]
+name = "axum_ddd"
+path = "examples/axum_ddd"

@@ -26,7 +26,6 @@ impl super::Runtime for Tokio {
     }
 }
 
-impl MoonbaseResource for Tokio {}
 impl Module<Moonbase> for Tokio {
     fn initialize(
         self,
